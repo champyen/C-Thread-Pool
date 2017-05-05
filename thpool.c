@@ -16,6 +16,8 @@
 #include <pthread.h>
 #include <errno.h>
 #include <time.h>
+#include "BlocksRuntime/Block.h"
+
 #if defined(__linux__)
 #include <sys/prctl.h>
 #endif
@@ -55,6 +57,8 @@ typedef struct job{
 	struct job*  prev;                   /* pointer to previous job   */
 	void   (*function)(void* arg);       /* function pointer          */
 	void*  arg;                          /* function's argument       */
+	thpool_block_t block;
+	int	is_block;
 } job;
 
 
@@ -176,7 +180,7 @@ struct thpool_* thpool_init(int num_threads){
 int thpool_add_work(thpool_* thpool_p, void (*function_p)(void*), void* arg_p){
 	job* newjob;
 
-	newjob=(struct job*)malloc(sizeof(struct job));
+	newjob=(struct job*)calloc(1, sizeof(struct job));
 	if (newjob==NULL){
 		err("thpool_add_work(): Could not allocate memory for new job\n");
 		return -1;
@@ -192,6 +196,25 @@ int thpool_add_work(thpool_* thpool_p, void (*function_p)(void*), void* arg_p){
 	return 0;
 }
 
+int thpool_add_block(thpool_ *thpool_p, thpool_block_t block)
+{
+	job* newjob;
+
+	newjob=(struct job*)calloc(1, sizeof(struct job));
+	if (newjob==NULL){
+		err("thpool_add_work(): Could not allocate memory for new job\n");
+		return -1;
+	}
+
+	/* add function and argument */
+	newjob->block=Block_copy(block);
+	newjob->is_block=1;
+
+	/* add job to queue */
+	jobqueue_push(&thpool_p->jobqueue, newjob);
+
+    return 0;
+}
 
 /* Wait until all jobs have finished */
 void thpool_wait(thpool_* thpool_p){
@@ -361,9 +384,14 @@ static void* thread_do(struct thread* thread_p){
 			void*  arg_buff;
 			job* job_p = jobqueue_pull(&thpool_p->jobqueue);
 			if (job_p) {
-				func_buff = job_p->function;
-				arg_buff  = job_p->arg;
-				func_buff(arg_buff);
+				if(job_p->is_block){
+					job_p->block();
+					Block_release(job_p->block);
+				}else{
+					func_buff = job_p->function;
+					arg_buff  = job_p->arg;
+					func_buff(arg_buff);
+				}
 				free(job_p);
 			}
 

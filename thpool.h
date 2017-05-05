@@ -15,7 +15,7 @@ extern "C" {
 
 
 typedef struct thpool_* threadpool;
-
+typedef void (^thpool_block_t)(void);
 
 /**
  * @brief  Initialize threadpool
@@ -65,7 +65,7 @@ threadpool thpool_init(int num_threads);
  * @return 0 on successs, -1 otherwise.
  */
 int thpool_add_work(threadpool, void (*function_p)(void*), void* arg_p);
-
+int thpool_add_block(threadpool, thpool_block_t);
 
 /**
  * @brief Wait for all queued jobs to finish

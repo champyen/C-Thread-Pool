@@ -12,34 +12,56 @@
  * */
 
 #include <stdio.h>
-#include <pthread.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/time.h>
 #include "thpool.h"
 
-
-void task1(){
-	printf("Thread #%u working on task1\n", (int)pthread_self());
-}
-
-
-void task2(){
-	printf("Thread #%u working on task2\n", (int)pthread_self());
-}
-
+#define TEST_DEPTH	4
+#define TEST_W		1024
+#define TEST_H		1024
 
 int main(){
+	struct timeval s_time, e_time;
+	int *buf0 = (int*)calloc(TEST_DEPTH*TEST_W*TEST_H, sizeof(int));
+	int *buf1 = (int*)calloc(TEST_DEPTH*TEST_W*TEST_H, sizeof(int));
+
 	
+	gettimeofday(&s_time, NULL);
+	for(int pidx = 0; pidx < TEST_DEPTH; pidx++){
+		int *plane = buf0 + pidx*TEST_W*TEST_H;
+		for(int yidx = 0; yidx < TEST_H; yidx++){
+			for(int xidx = 0; xidx < TEST_W; xidx++){
+				plane[yidx*TEST_W + xidx] = pidx*4096 + (yidx + xidx);
+			}
+		}
+	}
+	gettimeofday(&e_time, NULL);
+	printf("single thread - %ld us\n", (e_time.tv_sec - s_time.tv_sec)*1000000 + (e_time.tv_usec - s_time.tv_usec));
+
 	puts("Making threadpool with 4 threads");
 	threadpool thpool = thpool_init(4);
 
-	puts("Adding 40 tasks to threadpool");
-	int i;
-	for (i=0; i<20; i++){
-		thpool_add_work(thpool, (void*)task1, NULL);
-		thpool_add_work(thpool, (void*)task2, NULL);
-	};
+	gettimeofday(&s_time, NULL);
+	for(int pidx = 0; pidx < TEST_DEPTH; pidx++){
+		int *plane = buf1 + pidx*TEST_W*TEST_H;
+		thpool_add_block(thpool, ^{
+			for(int yidx = 0; yidx < TEST_H; yidx++){
+				for(int xidx = 0; xidx < TEST_W; xidx++){
+					plane[yidx*TEST_W + xidx] = pidx*4096 + (yidx + xidx);
+				}
+			}
+		});
+	}
+	thpool_wait(thpool);
+	gettimeofday(&e_time, NULL);
+	printf("4 threads - %ld us\n", (e_time.tv_sec - s_time.tv_sec)*1000000 + (e_time.tv_usec - s_time.tv_usec));
+	printf("result %d\n", memcmp(buf0, buf1, TEST_DEPTH*TEST_W*TEST_H*sizeof(int)));
 
 	puts("Killing threadpool");
 	thpool_destroy(thpool);
 	
+	free(buf0);
+	free(buf1);
 	return 0;
 }
